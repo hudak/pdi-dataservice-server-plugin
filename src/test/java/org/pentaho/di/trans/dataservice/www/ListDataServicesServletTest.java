@@ -88,7 +88,6 @@ public class ListDataServicesServletTest extends BaseTest {
 
     servlet = new ListDataServicesServlet( context );
     servlet.setJettyMode( true );
-    servlet.setLog( logChannel );
     servlet.setup( transformationMap, null, null, null );
 
     when( transformationMap.getSlaveServerConfig() ).thenReturn( slaveServerConfig );

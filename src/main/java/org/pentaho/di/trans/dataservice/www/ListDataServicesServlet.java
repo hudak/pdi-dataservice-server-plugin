@@ -23,20 +23,14 @@
 package org.pentaho.di.trans.dataservice.www;
 
 import org.pentaho.di.core.annotations.CarteServlet;
-import org.pentaho.di.core.logging.LogChannelInterface;
-import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.xml.XMLHandler;
-import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.dataservice.DataServiceContext;
 import org.pentaho.di.trans.dataservice.clients.DataServiceClient;
 import org.pentaho.di.trans.dataservice.jdbc.ThinServiceInformation;
-import org.pentaho.di.www.BaseHttpServlet;
-import org.pentaho.di.www.CartePluginInterface;
+import org.pentaho.di.www.BaseCartePlugin;
 
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.Collections;
 import java.util.List;
 
@@ -50,9 +44,7 @@ import java.util.List;
   name = "List data services",
   description = "List all the available data services"
 )
-public class ListDataServicesServlet extends BaseHttpServlet implements CartePluginInterface {
-  private static Class<?> PKG = ListDataServicesServlet.class; // for i18n purposes, needed by Translator2!! $NON-NLS-1$
-
+public class ListDataServicesServlet extends BaseCartePlugin {
   private static final long serialVersionUID = 3634806745372015720L;
 
   public static final String CONTEXT_PATH = "/listServices";
@@ -62,27 +54,11 @@ public class ListDataServicesServlet extends BaseHttpServlet implements CartePlu
   private final DataServiceClient client;
 
   public ListDataServicesServlet( DataServiceContext context ) {
+    log = context.getLogChannel();
     client = context.getDataServiceClient();
   }
 
-  public void doPut( HttpServletRequest request, HttpServletResponse response ) throws ServletException, IOException {
-    doGet( request, response );
-  }
-
-  public void doGet( HttpServletRequest request, HttpServletResponse response ) throws ServletException, IOException {
-    if ( isJettyMode() && !request.getContextPath().startsWith( CONTEXT_PATH ) ) {
-      return;
-    }
-
-    if ( log.isDebug() ) {
-      logDebug( BaseMessages.getString( PKG, "LisDataServicesServlet.ListRequested" ) );
-    }
-    response.setStatus( HttpServletResponse.SC_OK );
-    response.setContentType( "text/xml" );
-
-    response.getWriter().println( XMLHandler.getXMLHeader() );
-    response.getWriter().println( XMLHandler.openTag( XML_TAG_SERVICES ) );
-
+  protected List<ThinServiceInformation> getServiceInformation() {
     List<ThinServiceInformation> serviceInformation = Collections.emptyList();
     try {
       client.setRepository( transformationMap.getSlaveServerConfig().getRepository() );
@@ -91,35 +67,31 @@ public class ListDataServicesServlet extends BaseHttpServlet implements CartePlu
     } catch ( Exception e ) {
       log.logError( "Unable to list extra repository services", e );
     }
-
-    for ( ThinServiceInformation thinServiceInformation : serviceInformation ) {
-      String serviceName = thinServiceInformation.getName();
-      response.getWriter().println( XMLHandler.openTag( XML_TAG_SERVICE ) );
-      response.getWriter().println( XMLHandler.addTagValue( "name", serviceName ) );
-
-      // Also include the row layout of the service step.
-      //
-      RowMetaInterface serviceFields = thinServiceInformation.getServiceFields();
-      response.getWriter().println( serviceFields.getMetaXML() );
-
-      response.getWriter().println( XMLHandler.closeTag( XML_TAG_SERVICE ) );
-    }
-    response.getWriter().println( XMLHandler.closeTag( XML_TAG_SERVICES ) );
+    return serviceInformation;
   }
 
-  public String toString() {
-    return "List data services";
-  }
+  @Override public void handleRequest( CarteRequest request ) throws IOException {
+    final List<ThinServiceInformation> serviceInformation = getServiceInformation();
 
-  public String getService() {
-    return CONTEXT_PATH + " (" + toString() + ")";
+    request.respond( 200 ).with( "text/xml", new WriterResponse() {
+      @Override public void write( PrintWriter writer ) throws IOException {
+        writer.println( XMLHandler.getXMLHeader() );
+        writer.println( XMLHandler.openTag( XML_TAG_SERVICES ) );
+
+        for ( ThinServiceInformation thinServiceInformation : serviceInformation ) {
+          writer.println( XMLHandler.openTag( XML_TAG_SERVICE ) );
+
+          writer.println( XMLHandler.addTagValue( "name", thinServiceInformation.getName() ) );
+          writer.println( thinServiceInformation.getServiceFields().getMetaXML() );
+
+          writer.println( XMLHandler.closeTag( XML_TAG_SERVICE ) );
+        }
+        writer.println( XMLHandler.closeTag( XML_TAG_SERVICES ) );
+      }
+    } );
   }
 
   public String getContextPath() {
     return CONTEXT_PATH;
-  }
-
-  public void setLog( LogChannelInterface log ) {
-    this.log =  log;
   }
 }
