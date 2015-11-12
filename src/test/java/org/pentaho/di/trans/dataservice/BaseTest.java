@@ -26,6 +26,7 @@ import com.google.common.base.Function;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import org.hamcrest.Matcher;
 import org.junit.Before;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
@@ -50,6 +51,8 @@ import javax.cache.Cache;
 import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasProperty;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.eq;
@@ -107,7 +110,7 @@ public abstract class BaseTest {
 
   @Before
   public void setUpBase() throws Exception {
-    transMeta = createTransMeta( "dataServiceTrans" );
+    transMeta = createTransMeta( DATA_SERVICE_NAME );
 
     StepMeta stepMeta = mock( StepMeta.class );
     when( stepMeta.getName() ).thenReturn( DATA_SERVICE_STEP );
@@ -134,4 +137,7 @@ public abstract class BaseTest {
     when( metaStoreUtil.getLogChannel() ).thenReturn( logChannel );
   }
 
+  protected Matcher<SQL> isSqlFor( String sqlString ) {
+    return hasProperty( "sqlString", equalTo( sqlString ) );
+  }
 }

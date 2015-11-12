@@ -22,31 +22,29 @@
 
 package org.pentaho.di.trans.dataservice.www;
 
-import org.pentaho.di.core.Const;
+import com.google.common.base.Strings;
+import com.google.common.collect.Maps;
+import com.google.common.primitives.Ints;
 import org.pentaho.di.core.annotations.CarteServlet;
-import org.pentaho.di.core.logging.LogChannelInterface;
+import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.sql.SQL;
-import org.pentaho.di.core.xml.XMLHandler;
-import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransConfiguration;
 import org.pentaho.di.trans.TransExecutionConfiguration;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.dataservice.DataServiceContext;
-import org.pentaho.di.trans.dataservice.DataServiceExecutor;
 import org.pentaho.di.trans.dataservice.clients.DataServiceClient;
-import org.pentaho.di.www.BaseHttpServlet;
-import org.pentaho.di.www.CartePluginInterface;
+import org.pentaho.di.www.BaseCartePlugin;
 
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.DataOutputStream;
-import java.io.FileOutputStream;
+import java.io.File;
 import java.io.IOException;
-import java.util.Enumeration;
-import java.util.HashMap;
+import java.io.OutputStream;
+import java.util.Collection;
+import java.util.Iterator;
 import java.util.Map;
+
+import static com.google.common.base.Objects.firstNonNull;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * This servlet allows a user to get data from a "service" which is a transformation step.
@@ -58,7 +56,9 @@ import java.util.Map;
   name = "Get data from a data service",
   description = "Get data from a transformation data service using SQL"
 )
-public class TransDataServlet extends BaseHttpServlet implements CartePluginInterface {
+public class TransDataServlet extends BaseCartePlugin {
+  public static final String PARAMETER_PREFIX = "PARAMETER_";
+  public static final String MAX_ROWS = "MaxRows";
   private static Class<?> PKG = TransDataServlet.class; // for i18n purposes, needed by Translator2!! $NON-NLS-1$
 
   private static final long serialVersionUID = 3634806745372015720L;
@@ -68,126 +68,82 @@ public class TransDataServlet extends BaseHttpServlet implements CartePluginInte
 
   public TransDataServlet( DataServiceContext context ) {
     client = context.getDataServiceClient();
+    log = context.getLogChannel();
   }
 
-  public void doPut( HttpServletRequest request, HttpServletResponse response ) throws ServletException, IOException {
-    doGet( request, response );
-  }
-
-  public void doGet( HttpServletRequest request, HttpServletResponse response ) throws ServletException, IOException {
-    if ( isJettyMode() && !request.getContextPath().startsWith( CONTEXT_PATH ) ) {
+  @Override public void handleRequest( CarteRequest request ) throws IOException {
+    SQL sql;
+    try {
+      sql = new SQL( checkNotNull( request.getHeader( "SQL" ), "Query not given" ) );
+    } catch ( Exception e ) {
+      log.logError( "Error parsing SQL", e );
+      request.respond( 400 ).withMessage( "Invalid SQL Query: " + e.getMessage() );
       return;
     }
 
-    if ( log.isDebug() ) {
-      logDebug( BaseMessages.getString( PKG, "GetStatusServlet.StatusRequested" ) );
+    // Collect parameters from the request to pass to the service trans
+    Map<String, String> parameters = Maps.newHashMap();
+    collectParameters( parameters, request.getParameters() );
+
+    // Get maximum rows, or -1 for all rows
+    int maxRows = -1;
+    if ( request.getHeaders().containsKey( MAX_ROWS ) ) {
+      maxRows = firstNonNull( Ints.tryParse( request.getHeader( MAX_ROWS ) ), maxRows );
     }
-    response.setStatus( HttpServletResponse.SC_OK );
 
-    response.setContentType( "binary/jdbc" );
-    response.setBufferSize( 10000 );
-    // response.setHeader("Content-Length", Integer.toString(Integer.MAX_VALUE));
+    // Log the generated transformation if needed
+    String debugTrans = request.getParameter( "debugtrans" );
+    File debugTransFile = !Strings.isNullOrEmpty( debugTrans ) ? new File( debugTrans ) : null;
 
-    String sqlQuery = request.getHeader( "SQL" );
-    final int maxRows = Const.toInt( request.getHeader( "MaxRows" ), -1 );
-
-    final String debugTransFile = request.getParameter( "debugtrans" );
-
-    // Parse the variables in the request header...
-    //
-    Map<String, String> parameters = getParametersFromRequestHeader( request );
-
+    final DataServiceClient.Query query;
     try {
-      SQL sql = new SQL( sqlQuery );
-      if ( sql.getServiceName() == null || sql.getServiceName().equals( DataServiceClient.DUMMY_TABLE_NAME ) ) {
-        // Support for SELECT 1 and SELECT 1 FROM dual
-        client.writeDummyRow( sql, new DataOutputStream( response.getOutputStream() ) );
-      } else {
-        // Update client with configured repository and metastore
-        client.setRepository( transformationMap.getSlaveServerConfig().getRepository() );
-        client.setMetaStore( transformationMap.getSlaveServerConfig().getMetaStore() );
+      // Update client with configured repository and metaStore
+      client.setRepository( transformationMap.getSlaveServerConfig().getRepository() );
+      client.setMetaStore( transformationMap.getSlaveServerConfig().getMetaStore() );
 
-        // Pass query to client
-        DataServiceExecutor executor = client.buildExecutor( sql ).
-            parameters( parameters ).
-            rowLimit( maxRows ).
-            build();
-
-        executor.executeQuery( new DataOutputStream( response.getOutputStream() ) );
-
-        // For logging and tracking purposes, let's expose both the service transformation as well
-        // as the generated transformation on this very carte instance
-        //
-        TransMeta serviceTransMeta = executor.getServiceTransMeta();
-        Trans serviceTrans = executor.getServiceTrans();
-        if ( serviceTrans != null ) {
-          // not dual
-          TransConfiguration serviceTransConfiguration = new TransConfiguration( serviceTransMeta, new TransExecutionConfiguration() );
-          transformationMap.addTransformation( serviceTransMeta.getName(), serviceTrans.getContainerObjectId(), serviceTrans, serviceTransConfiguration );
-        }
-
-        // And the generated transformation...
-        //
-        TransMeta genTransMeta = executor.getGenTransMeta();
-        Trans genTrans = executor.getGenTrans();
-        TransConfiguration genTransConfiguration = new TransConfiguration( genTransMeta, new TransExecutionConfiguration() );
-        transformationMap.addTransformation( genTransMeta.getName(), genTrans.getContainerObjectId(), genTrans, genTransConfiguration );
-
-        // Log the generated transformation if needed
-        //
-        if ( !Const.isEmpty( debugTransFile ) ) {
-          // Store it to temp file for debugging!
-          //
-          try {
-            FileOutputStream fos = client.getDebugFileOutputStream( debugTransFile );
-            fos.write( XMLHandler.getXMLHeader( Const.XML_ENCODING ).getBytes( Const.XML_ENCODING ) );
-            fos.write( genTransMeta.getXML().getBytes( Const.XML_ENCODING ) );
-            fos.close();
-          } catch ( Exception e ) {
-            logError( "Unable to write dynamic transformation to file", e );
-          }
-        }
-
-        executor.waitUntilFinished();
-      }
-
-    } catch ( Exception e ) {
-      log.logError( "Error executing SQL query: " + sqlQuery, e );
-      response.setStatus( HttpServletResponse.SC_BAD_REQUEST );
-      response.getWriter().println( e.getMessage().trim() );
+      // Pass query to client
+      query = client.prepareQuery( sql, maxRows, parameters, debugTransFile );
+    } catch ( KettleException e ) {
+      log.logError( "Error executing query: " + sql, e );
+      request.respond( 500 ).withMessage( "Error executing query: " + e.getMessage() );
+      return;
     }
+
+    // For logging and tracking purposes, let's expose both the service transformation as well
+    // as the generated transformation on this very carte instance
+    //
+    for ( Trans trans : query.getTransList() ) {
+      monitorTransformation( trans );
+    }
+
+    // Execute query response
+    request.respond( 200 ).with( "binary/jdbc", new OutputStreamResponse() {
+      @Override public void write( OutputStream outputStream ) throws IOException {
+        query.writeTo( outputStream );
+      }
+    } );
   }
 
-  public static Map<String, String> getParametersFromRequestHeader( HttpServletRequest request ) {
-    Map<String, String> parameters = new HashMap<String, String>();
-    Enumeration<?> parameterNames = request.getParameterNames();
-    while ( parameterNames.hasMoreElements() ) {
-      String fullName = (String) parameterNames.nextElement();
-      if ( fullName.startsWith( "PARAMETER_" ) ) {
-        String parameterName = fullName.substring( "PARAMETER_".length() );
-        String value = request.getParameter( fullName );
-        if ( !Const.isEmpty( parameterName ) ) {
-          parameters.put( parameterName, Const.NVL( value, "" ) );
-        }
+  private void monitorTransformation( Trans trans ) {
+    TransMeta transMeta = trans.getTransMeta();
+    TransExecutionConfiguration executionConfiguration = new TransExecutionConfiguration();
+    TransConfiguration config = new TransConfiguration( transMeta, executionConfiguration );
+    transformationMap .addTransformation( transMeta.getName(), trans.getContainerObjectId(), trans, config );
+  }
+
+  private Map<String, String> collectParameters( Map<String, String> parameters,
+                                                 Map<String, Collection<String>> map ) {
+    for ( Map.Entry<String, Collection<String>> parameterEntry : map.entrySet() ) {
+      String name = parameterEntry.getKey();
+      Iterator<String> value = parameterEntry.getValue().iterator();
+      if ( name.startsWith( PARAMETER_PREFIX ) && value.hasNext() ) {
+        parameters.put( name.substring( PARAMETER_PREFIX.length() ), value.next() );
       }
     }
-
     return parameters;
-  }
-
-  public String toString() {
-    return "Transformation data service";
-  }
-
-  public String getService() {
-    return CONTEXT_PATH + " (" + toString() + ")";
   }
 
   public String getContextPath() {
     return CONTEXT_PATH;
-  }
-
-  public void setLog( LogChannelInterface log ) {
-    this.log =  log;
   }
 }
