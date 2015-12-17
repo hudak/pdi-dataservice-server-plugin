@@ -23,7 +23,6 @@
 package org.pentaho.di.trans.dataservice;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
@@ -42,9 +41,7 @@ import org.pentaho.di.trans.RowProducer;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransListener;
 import org.pentaho.di.trans.TransMeta;
-import org.pentaho.di.trans.dataservice.optimization.OptimizationImpactInfo;
 import org.pentaho.di.trans.dataservice.optimization.PushDownOptimizationMeta;
-import org.pentaho.di.trans.dataservice.optimization.PushDownType;
 import org.pentaho.di.trans.dataservice.optimization.ValueMetaResolver;
 import org.pentaho.di.trans.step.RowListener;
 import org.pentaho.di.trans.step.StepInterface;
@@ -410,31 +407,4 @@ public class DataServiceExecutorTest extends BaseTest {
     assertTrue( executor.isStopped() );
   }
 
-  @Test
-  public void testPreview() throws Exception {
-    String sql = "SELECT * FROM " + DATA_SERVICE_NAME;
-
-    List<OptimizationImpactInfo> expectedImpact = Lists.newArrayListWithExpectedSize( 5 );
-    for ( int i = 0; i < 5; i++ ) {
-      PushDownType type = mock( PushDownType.class );
-      OptimizationImpactInfo info = mock( OptimizationImpactInfo.class );
-      when( type.preview( (DataServiceExecutor) any(), (PushDownOptimizationMeta) any() ) ).thenReturn( info );
-
-      PushDownOptimizationMeta meta = new PushDownOptimizationMeta();
-      meta.setType( type );
-      dataService.getPushDownOptimizationMeta().add( meta );
-      expectedImpact.add( info );
-    }
-
-    Trans serviceTrans = mock( Trans.class, RETURNS_DEEP_STUBS );
-    when( serviceTrans.getContainerObjectId() ).thenReturn( CONTAINER_ID );
-
-    DataServiceExecutor executor = new DataServiceExecutor.Builder( new SQL( sql ), dataService, context ).
-      serviceTrans( serviceTrans ).
-      sqlTransGenerator( mockSqlTransGenerator() ).
-      genTrans( mock( Trans.class, RETURNS_DEEP_STUBS ) ).
-      build();
-
-    assertThat( executor.preview(), equalTo( expectedImpact ) );
-  }
 }

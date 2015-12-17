@@ -346,14 +346,6 @@ public class DataServiceExecutor {
     listenerMap.putAll( builder.build() );
   }
 
-  public List<OptimizationImpactInfo> preview() {
-    ImmutableList.Builder<OptimizationImpactInfo> builder = ImmutableList.builder();
-    for ( PushDownOptimizationMeta optMeta : getService().getPushDownOptimizationMeta() ) {
-      builder.add( optMeta.preview( this ) );
-    }
-    return builder.build();
-  }
-
   private Map<String, String> getWhereConditionParameters() {
     // Parameters: see which ones are defined in the SQL
     //
