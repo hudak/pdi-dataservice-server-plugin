@@ -22,6 +22,7 @@
 
 package org.pentaho.di.trans.dataservice.ui.model;
 
+import com.google.common.collect.ImmutableList;
 import org.junit.Before;
 import org.junit.Test;
 import org.pentaho.di.core.logging.LogChannelInterface;
@@ -155,11 +156,11 @@ public class DataServiceTestModelTest {
 
     OptimizationImpactInfo mockInfo = mock( OptimizationImpactInfo.class );
     when( mockInfo.getDescription() ).thenReturn( "my optimization" );
-    model.addOptimizationImpact( mockInfo );
+    model.addOptimizationImpact( ImmutableList.of( mockInfo ) );
     assertEquals( "\nmy optimization\n- - - - - - - - - - - - - - - - - - - - - -\n\n",
       model.getOptimizationImpactDescription() );
 
-    model.clearOptimizationImpact();
+    model.addOptimizationImpact( ImmutableList.<OptimizationImpactInfo>of() );
     assertEquals( "\n[No Push Down Optimizations Defined]\n", model.getOptimizationImpactDescription() );
   }
 

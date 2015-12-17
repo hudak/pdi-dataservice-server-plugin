@@ -130,13 +130,9 @@ public class DataServiceTestModel extends XulEventSourceAdapter {
     this.resultRowMeta = resultRowMeta;
   }
 
-  public void clearOptimizationImpact() {
+  public void addOptimizationImpact( List<OptimizationImpactInfo> info ) {
     optimizationImpact.clear();
-    firePropertyChange( "optimizationImpactDescription", null, getOptimizationImpactDescription() );
-  }
-
-  public void addOptimizationImpact( OptimizationImpactInfo info ) {
-    optimizationImpact.add( info );
+    optimizationImpact.addAll( info );
     firePropertyChange( "optimizationImpactDescription", null, getOptimizationImpactDescription() );
   }
 

@@ -22,6 +22,8 @@
 
 package org.pentaho.di.trans.dataservice;
 
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
@@ -40,7 +42,9 @@ import org.pentaho.di.trans.RowProducer;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransListener;
 import org.pentaho.di.trans.TransMeta;
+import org.pentaho.di.trans.dataservice.optimization.OptimizationImpactInfo;
 import org.pentaho.di.trans.dataservice.optimization.PushDownOptimizationMeta;
+import org.pentaho.di.trans.dataservice.optimization.PushDownType;
 import org.pentaho.di.trans.dataservice.optimization.ValueMetaResolver;
 import org.pentaho.di.trans.step.RowListener;
 import org.pentaho.di.trans.step.StepInterface;
@@ -49,13 +53,13 @@ import org.pentaho.di.trans.step.StepListener;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.Matchers.arrayWithSize;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -259,6 +263,7 @@ public class DataServiceExecutorTest extends BaseTest {
       serviceTrans( serviceTrans ).
       sqlTransGenerator( sqlTransGenerator ).
       genTrans( genTrans ).
+      parameters( ImmutableMap.of( "BUILD_PARAM", "TRUE" ) ).
       build();
 
     List<Condition> conditions = theSql.getWhereCondition().getCondition().getChildren();
@@ -271,15 +276,20 @@ public class DataServiceExecutorTest extends BaseTest {
       assertNull( condition.getLeftValuename() );
       assertNull( condition.getRightValuename() );
     }
+
+    assertThat( executor.getParameters(), equalTo( (Map<String, String>) ImmutableMap.of(
+      "baz", "bop",
+      "foo", "bar",
+      "BUILD_PARAM", "TRUE"
+    ) ) );
+
+    executor.getParameters().put( "AFTER_BUILD", "TRUE" );
+    executor.executeQuery();
     // verify that the parameter values were correctly extracted from the WHERE
-    verify( executor.getServiceTransMeta() ).setParameterValue( "foo", "bar" );
-    verify( executor.getServiceTransMeta() ).setParameterValue( "baz", "bop" );
-
-    Map<String, String> expectedParams = new HashMap<String, String>();
-    expectedParams.put( "baz", "bop" );
-    expectedParams.put( "foo", "bar" );
-
-    assertEquals( expectedParams, executor.getParameters() );
+    verify( serviceTrans ).setParameterValue( "foo", "bar" );
+    verify( serviceTrans ).setParameterValue( "baz", "bop" );
+    verify( serviceTrans ).setParameterValue( "BUILD_PARAM", "TRUE" );
+    verify( serviceTrans ).setParameterValue( "AFTER_BUILD", "TRUE" );
   }
 
   @Test
@@ -400,4 +410,31 @@ public class DataServiceExecutorTest extends BaseTest {
     assertTrue( executor.isStopped() );
   }
 
+  @Test
+  public void testPreview() throws Exception {
+    String sql = "SELECT * FROM " + DATA_SERVICE_NAME;
+
+    List<OptimizationImpactInfo> expectedImpact = Lists.newArrayListWithExpectedSize( 5 );
+    for ( int i = 0; i < 5; i++ ) {
+      PushDownType type = mock( PushDownType.class );
+      OptimizationImpactInfo info = mock( OptimizationImpactInfo.class );
+      when( type.preview( (DataServiceExecutor) any(), (PushDownOptimizationMeta) any() ) ).thenReturn( info );
+
+      PushDownOptimizationMeta meta = new PushDownOptimizationMeta();
+      meta.setType( type );
+      dataService.getPushDownOptimizationMeta().add( meta );
+      expectedImpact.add( info );
+    }
+
+    Trans serviceTrans = mock( Trans.class, RETURNS_DEEP_STUBS );
+    when( serviceTrans.getContainerObjectId() ).thenReturn( CONTAINER_ID );
+
+    DataServiceExecutor executor = new DataServiceExecutor.Builder( new SQL( sql ), dataService, context ).
+      serviceTrans( serviceTrans ).
+      sqlTransGenerator( mockSqlTransGenerator() ).
+      genTrans( mock( Trans.class, RETURNS_DEEP_STUBS ) ).
+      build();
+
+    assertThat( executor.preview(), equalTo( expectedImpact ) );
+  }
 }

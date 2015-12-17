@@ -22,12 +22,6 @@
 
 package org.pentaho.di.trans.dataservice.ui.controller;
 
-import java.lang.reflect.InvocationTargetException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
-
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
@@ -48,7 +42,6 @@ import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.dataservice.DataServiceContext;
 import org.pentaho.di.trans.dataservice.DataServiceExecutor;
 import org.pentaho.di.trans.dataservice.DataServiceMeta;
-import org.pentaho.di.trans.dataservice.optimization.PushDownOptimizationMeta;
 import org.pentaho.di.trans.dataservice.ui.DataServiceTestCallback;
 import org.pentaho.di.trans.dataservice.ui.DataServiceTestDialog;
 import org.pentaho.di.trans.dataservice.ui.model.DataServiceTestModel;
@@ -65,6 +58,12 @@ import org.pentaho.ui.xul.components.XulLabel;
 import org.pentaho.ui.xul.components.XulMenuList;
 import org.pentaho.ui.xul.components.XulTextbox;
 import org.pentaho.ui.xul.impl.AbstractXulEventHandler;
+
+import java.lang.reflect.InvocationTargetException;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class DataServiceTestController extends AbstractXulEventHandler {
 
@@ -252,7 +251,7 @@ public class DataServiceTestController extends AbstractXulEventHandler {
     resetMetrics();
     dataServiceExec = getNewDataServiceExecutor( true );
 
-    updateOptimizationImpact( dataServiceExec );
+    model.addOptimizationImpact( dataServiceExec.preview() );
     updateModel( dataServiceExec );
     callback.onLogChannelUpdate();
     dataServiceExec.executeQuery( getDataServiceRowListener() );
@@ -353,15 +352,8 @@ public class DataServiceTestController extends AbstractXulEventHandler {
   @SuppressWarnings( "unused" ) // Bound via XUL
   public void previewQueries() throws KettleException {
     DataServiceExecutor dataServiceExec = getNewDataServiceExecutor( false );
-    updateOptimizationImpact( dataServiceExec );
-  }
 
-  private void updateOptimizationImpact( DataServiceExecutor dataServiceExec ) {
-    model.clearOptimizationImpact();
-
-    for ( PushDownOptimizationMeta optMeta : dataService.getPushDownOptimizationMeta() ) {
-      model.addOptimizationImpact( optMeta.preview( dataServiceExec ) );
-    }
+    model.addOptimizationImpact( dataServiceExec.preview() );
   }
 
   private void maybeSetErrorAlert( DataServiceExecutor dataServiceExec ) {
