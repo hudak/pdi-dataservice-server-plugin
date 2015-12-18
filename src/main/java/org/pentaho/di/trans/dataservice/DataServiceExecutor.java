@@ -47,7 +47,6 @@ import org.pentaho.di.trans.dataservice.execution.CopyParameters;
 import org.pentaho.di.trans.dataservice.execution.DefaultTransWiring;
 import org.pentaho.di.trans.dataservice.execution.PrepareExecution;
 import org.pentaho.di.trans.dataservice.execution.TransStarter;
-import org.pentaho.di.trans.dataservice.optimization.OptimizationImpactInfo;
 import org.pentaho.di.trans.dataservice.optimization.PushDownOptimizationMeta;
 import org.pentaho.di.trans.dataservice.optimization.ValueMetaResolver;
 import org.pentaho.di.trans.step.RowAdapter;
@@ -58,7 +57,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -424,11 +422,25 @@ public class DataServiceExecutor {
     }
 
     // Run execution plan
-    for ( Runnable runnable : listenerMap.values() ) {
-      runnable.run();
-    }
+    executeListeners( ExecutionPoint.values() );
 
     return this;
+  }
+
+  public void executeListeners( ExecutionPoint... stages ) {
+    for ( ExecutionPoint stage : stages ) {
+      // Copy stage tasks to a new list to prevent accidental concurrent modification
+      ImmutableList<Runnable> tasks = ImmutableList.copyOf( listenerMap.get( stage ) );
+      for ( Runnable task : tasks ) {
+        task.run();
+      }
+      if ( !listenerMap.get( stage ).equals( tasks ) ) {
+        getGenTrans().getLogChannel().logError(
+          "Listeners were modified while executing {0}. Started with {1} and ended with {2}",
+          stage, tasks, listenerMap.get( stage )
+        );
+      }
+    }
   }
 
   public RowProducer addRowProducer() throws KettleException {
