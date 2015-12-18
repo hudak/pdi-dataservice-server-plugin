@@ -330,7 +330,8 @@ public class CachedServiceTest {
     when( serviceTrans.getSteps() ).thenReturn( stepMetaDataCombis );
 
     // Simulate executing data service
-    executor.executeQuery();
+    executor.executeListeners( DataServiceExecutor.ExecutionPoint.READY );
+    executor.executeListeners( DataServiceExecutor.ExecutionPoint.START );
 
     // Verify that serviceTrans never started, genTrans is accepting rows
     verify( serviceTrans ).stopAll();
@@ -390,7 +391,8 @@ public class CachedServiceTest {
     when( serviceTrans.getSteps() ).thenReturn( stepMetaDataCombis );
 
     // Simulate executing data service
-    executor.executeQuery();
+    executor.executeListeners( DataServiceExecutor.ExecutionPoint.READY );
+    executor.executeListeners( DataServiceExecutor.ExecutionPoint.START );
 
     // Verify that serviceTrans never started, genTrans is accepting rows
     verify( serviceTrans ).stopAll();
