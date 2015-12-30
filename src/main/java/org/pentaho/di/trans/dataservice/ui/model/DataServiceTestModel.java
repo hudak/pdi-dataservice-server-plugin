@@ -22,10 +22,10 @@
 
 package org.pentaho.di.trans.dataservice.ui.model;
 
-import org.pentaho.di.trans.dataservice.optimization.OptimizationImpactInfo;
 import org.pentaho.di.core.logging.LogChannelInterface;
 import org.pentaho.di.core.logging.LogLevel;
 import org.pentaho.di.core.row.RowMetaInterface;
+import org.pentaho.di.trans.dataservice.optimization.OptimizationImpactInfo;
 import org.pentaho.ui.xul.XulEventSourceAdapter;
 
 import java.util.ArrayList;
@@ -130,13 +130,9 @@ public class DataServiceTestModel extends XulEventSourceAdapter {
     this.resultRowMeta = resultRowMeta;
   }
 
-  public void clearOptimizationImpact() {
+  public void setOptimizationImpact( List<OptimizationImpactInfo> info ) {
     optimizationImpact.clear();
-    firePropertyChange( "optimizationImpactDescription", null, getOptimizationImpactDescription() );
-  }
-
-  public void addOptimizationImpact( OptimizationImpactInfo info ) {
-    optimizationImpact.add( info );
+    optimizationImpact.addAll( info );
     firePropertyChange( "optimizationImpactDescription", null, getOptimizationImpactDescription() );
   }
 

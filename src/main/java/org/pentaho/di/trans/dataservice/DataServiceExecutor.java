@@ -47,6 +47,7 @@ import org.pentaho.di.trans.dataservice.execution.CopyParameters;
 import org.pentaho.di.trans.dataservice.execution.DefaultTransWiring;
 import org.pentaho.di.trans.dataservice.execution.PrepareExecution;
 import org.pentaho.di.trans.dataservice.execution.TransStarter;
+import org.pentaho.di.trans.dataservice.optimization.OptimizationImpactInfo;
 import org.pentaho.di.trans.dataservice.optimization.PushDownOptimizationMeta;
 import org.pentaho.di.trans.dataservice.optimization.ValueMetaResolver;
 import org.pentaho.di.trans.step.RowAdapter;
@@ -57,6 +58,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -352,6 +354,14 @@ public class DataServiceExecutor {
       extractConditionParameters( sql.getWhereCondition().getCondition(), conditionParameters );
     }
     return conditionParameters;
+  }
+
+  public List<OptimizationImpactInfo> preview() {
+    ImmutableList.Builder<OptimizationImpactInfo> previewInfo = ImmutableList.builder();
+    for ( PushDownOptimizationMeta optMeta : service.getPushDownOptimizationMeta() ) {
+      previewInfo.add( optMeta.preview( this ) );
+    }
+    return previewInfo.build();
   }
 
   public static void writeMetadata( DataOutputStream dos, String... metadatas ) throws IOException {
