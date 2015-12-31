@@ -34,7 +34,7 @@ import org.pentaho.di.trans.step.StepMeta;
 /**
  * @author nhudak
  */
-public class DefaultTransWiring implements Runnable {
+public class DefaultTransWiring implements ExecutionPoint {
   private final DataServiceExecutor dataServiceExecutor;
 
   public DefaultTransWiring( DataServiceExecutor dataServiceExecutor ) {
@@ -79,4 +79,7 @@ public class DefaultTransWiring implements Runnable {
       } );
   }
 
+  @Override public double getPriority() {
+    return READY;
+  }
 }

@@ -29,7 +29,7 @@ import org.pentaho.di.trans.Trans;
 /**
  * @author nhudak
  */
-public class PrepareExecution implements Runnable {
+public class PrepareExecution implements ExecutionPoint {
   private final Trans trans;
 
   public PrepareExecution( Trans trans ) {
@@ -42,5 +42,9 @@ public class PrepareExecution implements Runnable {
     } catch ( KettleException e ) {
       Throwables.propagate( e );
     }
+  }
+
+  @Override public double getPriority() {
+    return PREPARE;
   }
 }

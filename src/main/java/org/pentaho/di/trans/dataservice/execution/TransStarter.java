@@ -29,7 +29,7 @@ import org.pentaho.di.trans.Trans;
 /**
  * @author nhudak
  */
-public class TransStarter implements Runnable {
+public class TransStarter implements ExecutionPoint {
   private final Trans trans;
 
   public TransStarter( Trans trans ) {
@@ -46,5 +46,9 @@ public class TransStarter implements Runnable {
     } catch ( KettleException e ) {
       throw Throwables.propagate( e );
     }
+  }
+
+  @Override public double getPriority() {
+    return START;
   }
 }

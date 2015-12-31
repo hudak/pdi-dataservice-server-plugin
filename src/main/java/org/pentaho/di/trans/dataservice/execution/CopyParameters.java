@@ -32,7 +32,7 @@ import java.util.Map;
 /**
  * @author nhudak
  */
-public class CopyParameters implements Runnable {
+public class CopyParameters implements ExecutionPoint {
   private final Map<String, String> parameters;
   private final NamedParams first;
   private final List<NamedParams> rest;
@@ -54,5 +54,9 @@ public class CopyParameters implements Runnable {
     for ( NamedParams namedParams : rest ) {
       namedParams.copyParametersFrom( first );
     }
+  }
+
+  @Override public double getPriority() {
+    return PREPARE;
   }
 }

@@ -26,6 +26,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListenableFutureTask;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.dataservice.DataServiceExecutor;
+import org.pentaho.di.trans.dataservice.execution.ExecutionPoint;
 import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMetaDataCombi;
 
@@ -44,7 +45,7 @@ public abstract class StepOptimization implements PushDownType {
         return activate( executor, stepInterface );
       }
     } );
-    executor.getListenerMap().put( DataServiceExecutor.ExecutionPoint.OPTIMIZE, future );
+    executor.addTask( ExecutionPoint.OPTIMIZE, future );
     return future;
   }
 

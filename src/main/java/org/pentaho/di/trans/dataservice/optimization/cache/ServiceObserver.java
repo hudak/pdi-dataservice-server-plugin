@@ -31,6 +31,7 @@ import org.pentaho.di.core.RowMetaAndData;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.trans.Trans;
+import org.pentaho.di.trans.dataservice.execution.ExecutionPoint;
 import org.pentaho.di.trans.step.RowAdapter;
 import org.pentaho.di.trans.step.StepAdapter;
 import org.pentaho.di.trans.step.StepInterface;
@@ -43,7 +44,7 @@ import static com.google.common.base.Predicates.instanceOf;
 /**
  * @author nhudak
  */
-public class ServiceObserver extends AbstractFuture<CachedService> implements Runnable {
+public class ServiceObserver extends AbstractFuture<CachedService> implements ExecutionPoint {
   private final DataServiceExecutor executor;
 
   public ServiceObserver( DataServiceExecutor executor ) {
@@ -51,11 +52,10 @@ public class ServiceObserver extends AbstractFuture<CachedService> implements Ru
   }
 
   public ListenableFuture<CachedService> install() {
-    List<Runnable> serviceReady = executor.getListenerMap().get( DataServiceExecutor.ExecutionPoint.READY );
-    if ( Iterables.any( serviceReady, instanceOf( ServiceObserver.class ) ) ) {
+    if ( Iterables.any( executor.getTasks(), instanceOf( ServiceObserver.class ) ) ) {
       setException( new IllegalStateException( "More than one cache is configured for this data service." ) );
     } else {
-      serviceReady.add( this );
+      executor.addTask( this );
     }
     return this;
   }
@@ -80,5 +80,9 @@ public class ServiceObserver extends AbstractFuture<CachedService> implements Ru
         }
       }
     } );
+  }
+
+  @Override public double getPriority() {
+    return READY;
   }
 }
