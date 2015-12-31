@@ -14,4 +14,6 @@ public interface ExecutionPoint extends Runnable {
   };
 
   double getPriority();
+
+  void run();
 }

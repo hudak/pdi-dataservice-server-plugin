@@ -22,6 +22,7 @@
 
 package org.pentaho.di.trans.dataservice.optimization.cache;
 
+import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import com.google.common.collect.Iterables;
@@ -60,6 +61,7 @@ class CachedServiceLoader implements ExecutionPoint {
     final Trans serviceTrans = dataServiceExecutor.getServiceTrans(), genTrans = dataServiceExecutor.getGenTrans();
     final RowProducer rowProducer = dataServiceExecutor.addRowProducer();
 
+    Preconditions.checkState( replay == null, "replay() can be run only once" );
     Iterables.removeIf( dataServiceExecutor.getTasks(), Predicates.or(
       Predicates.instanceOf( DefaultTransWiring.class ),
       new Predicate<Runnable>() {
@@ -69,7 +71,11 @@ class CachedServiceLoader implements ExecutionPoint {
       }
     ) );
 
-    dataServiceExecutor.addTask( ExecutionPoint.READY, new Runnable() {
+    dataServiceExecutor.addTask( new ExecutionPoint() {
+      @Override public double getPriority() {
+        return READY;
+      }
+
       @Override public void run() {
         serviceTrans.stopAll();
         for ( StepMetaDataCombi stepMetaDataCombi : serviceTrans.getSteps() ) {

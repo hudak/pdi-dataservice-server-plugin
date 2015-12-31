@@ -22,15 +22,13 @@
 
 package org.pentaho.di.trans.dataservice.optimization;
 
+import com.google.common.util.concurrent.AbstractFuture;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListenableFutureTask;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.dataservice.DataServiceExecutor;
 import org.pentaho.di.trans.dataservice.execution.ExecutionPoint;
 import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMetaDataCombi;
-
-import java.util.concurrent.Callable;
 
 /**
  * @author nhudak
@@ -39,14 +37,9 @@ public abstract class StepOptimization implements PushDownType {
 
   public ListenableFuture<Boolean> activate( final DataServiceExecutor executor,
                                              final PushDownOptimizationMeta meta ) {
-    ListenableFutureTask<Boolean> future = ListenableFutureTask.create( new Callable<Boolean>() {
-      @Override public Boolean call() throws Exception {
-        StepInterface stepInterface = executor.getServiceTrans().findRunThread( meta.getStepName() );
-        return activate( executor, stepInterface );
-      }
-    } );
-    executor.addTask( ExecutionPoint.OPTIMIZE, future );
-    return future;
+    Task task = new Task( executor, meta );
+    executor.addTask( task );
+    return task;
   }
 
   @Override public OptimizationImpactInfo preview( DataServiceExecutor executor, PushDownOptimizationMeta meta ) {
@@ -74,4 +67,28 @@ public abstract class StepOptimization implements PushDownType {
   protected abstract boolean activate( DataServiceExecutor executor, StepInterface stepInterface );
 
   protected abstract OptimizationImpactInfo preview( DataServiceExecutor executor, StepInterface stepInterface );
+
+  public class Task extends AbstractFuture<Boolean> implements ExecutionPoint {
+    private final DataServiceExecutor executor;
+    private final PushDownOptimizationMeta meta;
+
+    public Task( DataServiceExecutor executor, PushDownOptimizationMeta meta ) {
+      this.executor = executor;
+      this.meta = meta;
+    }
+
+    @Override public void run() {
+      try {
+        StepInterface stepInterface = executor.getServiceTrans().findRunThread( meta.getStepName() );
+        set( stepInterface != null && activate( executor, stepInterface ) );
+      } catch ( Exception e ) {
+        setException( e );
+      }
+    }
+
+    @Override public double getPriority() {
+      return OPTIMIZE;
+    }
+  }
+
 }

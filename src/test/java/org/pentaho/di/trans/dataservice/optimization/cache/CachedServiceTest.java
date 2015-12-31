@@ -53,6 +53,7 @@ import org.pentaho.di.trans.dataservice.DataServiceContext;
 import org.pentaho.di.trans.dataservice.DataServiceExecutor;
 import org.pentaho.di.trans.dataservice.DataServiceMeta;
 import org.pentaho.di.trans.dataservice.SqlTransGenerator;
+import org.pentaho.di.trans.dataservice.execution.ExecutionPoint;
 import org.pentaho.di.trans.dataservice.optimization.cache.CachedService.CacheKey;
 import org.pentaho.di.trans.step.RowListener;
 import org.pentaho.di.trans.step.StepDataInterface;
@@ -228,7 +229,8 @@ public class CachedServiceTest {
     ServiceObserver observer = new ServiceObserver( executor );
 
     assertThat( observer.install(), sameInstance( (ListenableFuture<CachedService>) observer ) );
-    assertThat( executor.getListenerMap().get( DataServiceExecutor.ExecutionPoint.READY ), hasItem( observer ) );
+    assertThat( executor.getTasks(), hasItem( observer ) );
+    assertThat( observer.getPriority(), is( ExecutionPoint.READY ) );
 
     observer.run();
 
@@ -255,7 +257,7 @@ public class CachedServiceTest {
     ServiceObserver observer = new ServiceObserver( executor );
 
     observer.install();
-    assertThat( executor.getListenerMap().get( DataServiceExecutor.ExecutionPoint.READY ), hasItem( observer ) );
+    assertThat( executor.getTasks(), hasItem( observer ) );
 
     ListenableFuture<CachedService> failedObserver = new ServiceObserver( executor ).install();
     try {
@@ -287,7 +289,7 @@ public class CachedServiceTest {
     ServiceObserver observer = new ServiceObserver( executor );
 
     observer.install();
-    assertThat( executor.getListenerMap().get( DataServiceExecutor.ExecutionPoint.READY ), hasItem( observer ) );
+    assertThat( executor.getTasks(), hasItem( observer ) );
     observer.run();
 
     ArgumentCaptor<RowListener> rowListener = ArgumentCaptor.forClass( RowListener.class );
@@ -320,7 +322,6 @@ public class CachedServiceTest {
     final CachedServiceLoader cachedServiceLoader = new CachedServiceLoader( cachedService, mockExecutor );
     ListenableFuture<Integer> replay = cachedServiceLoader.replay( executor );
     ArgumentCaptor<Runnable> replayRunnable = ArgumentCaptor.forClass( Runnable.class );
-    verify( mockExecutor ).execute( replayRunnable.capture() );
 
     stepMetaDataCombi.step = inputStep;
     stepMetaDataCombi.meta = inputStepMetaInterface;
@@ -330,8 +331,7 @@ public class CachedServiceTest {
     when( serviceTrans.getSteps() ).thenReturn( stepMetaDataCombis );
 
     // Simulate executing data service
-    executor.executeListeners( DataServiceExecutor.ExecutionPoint.READY );
-    executor.executeListeners( DataServiceExecutor.ExecutionPoint.START );
+    executor.executeQuery();
 
     // Verify that serviceTrans never started, genTrans is accepting rows
     verify( serviceTrans ).stopAll();
@@ -340,6 +340,7 @@ public class CachedServiceTest {
     verify( inputStep ).markStop();
     verify( serviceTrans, never() ).startThreads();
     verify( genTrans ).startThreads();
+    verify( mockExecutor ).execute( replayRunnable.capture() );
 
     when(
       rowProducer.putRowWait( any( RowMetaInterface.class ), any( Object[].class ), anyInt(), any( TimeUnit.class ) )
@@ -364,7 +365,8 @@ public class CachedServiceTest {
       // Tenth row was called twice, since row set was full
       Object[] data = metaAndData.getData();
       rowsProduced.verify( rowProducer, times( i == 9 ? 2 : 1 ) )
-        .putRowWait( eq( metaAndData.getRowMeta() ), and( eq( data ), AdditionalMatchers.not( same( data ) ) ), anyInt(), any( TimeUnit.class ) );
+        .putRowWait( eq( metaAndData.getRowMeta() ), and( eq( data ), AdditionalMatchers.not( same( data ) ) ),
+          anyInt(), any( TimeUnit.class ) );
     }
     rowsProduced.verify( rowProducer ).finished();
     rowsProduced.verifyNoMoreInteractions();
@@ -381,7 +383,6 @@ public class CachedServiceTest {
     final CachedServiceLoader cachedServiceLoader = new CachedServiceLoader( cachedService, mockExecutor );
     ListenableFuture<Integer> replay = cachedServiceLoader.replay( executor );
     ArgumentCaptor<Runnable> replayRunnable = ArgumentCaptor.forClass( Runnable.class );
-    verify( mockExecutor ).execute( replayRunnable.capture() );
 
     stepMetaDataCombi.step = inputStep;
     stepMetaDataCombi.meta = inputStepMetaInterface;
@@ -391,8 +392,7 @@ public class CachedServiceTest {
     when( serviceTrans.getSteps() ).thenReturn( stepMetaDataCombis );
 
     // Simulate executing data service
-    executor.executeListeners( DataServiceExecutor.ExecutionPoint.READY );
-    executor.executeListeners( DataServiceExecutor.ExecutionPoint.START );
+    executor.executeQuery();
 
     // Verify that serviceTrans never started, genTrans is accepting rows
     verify( serviceTrans ).stopAll();
@@ -401,6 +401,7 @@ public class CachedServiceTest {
     verify( inputStep ).markStop();
     verify( serviceTrans, never() ).startThreads();
     verify( genTrans ).startThreads();
+    verify( mockExecutor ).execute( replayRunnable.capture() );
 
     final AtomicInteger rowsProduced = new AtomicInteger( 0 );
     when(
@@ -427,7 +428,8 @@ public class CachedServiceTest {
     for ( RowMetaAndData metaAndData : Iterables.limit( testData, 20 ) ) {
       Object[] data = metaAndData.getData();
       verify( rowProducer )
-        .putRowWait( eq( metaAndData.getRowMeta() ), and( eq( data ), AdditionalMatchers.not( same( data ) ) ), anyInt(), any( TimeUnit.class ) );
+        .putRowWait( eq( metaAndData.getRowMeta() ), and( eq( data ), AdditionalMatchers.not( same( data ) ) ),
+          anyInt(), any( TimeUnit.class ) );
     }
   }
 

@@ -22,13 +22,17 @@
 
 package org.pentaho.di.trans.dataservice;
 
+import com.google.common.base.Functions;
+import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.FluentIterable;
+import com.google.common.collect.ForwardingCollection;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Maps;
 import com.google.common.collect.MultimapBuilder;
+import com.google.common.collect.Multimaps;
+import com.google.common.collect.Range;
 import org.apache.commons.lang.StringUtils;
 import org.pentaho.di.core.Condition;
 import org.pentaho.di.core.exception.KettleException;
@@ -61,6 +65,7 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -75,7 +80,8 @@ public class DataServiceExecutor {
   private final SQL sql;
   private final Map<String, String> parameters;
   private final SqlTransGenerator sqlTransGenerator;
-  private final ListMultimap<Double, Runnable> executionPlan;
+  private final ListMultimap<Double, ExecutionPoint> executionPlan;
+  private Optional<Double> currentStage;
 
   private DataServiceExecutor( Builder builder ) {
     sql = builder.sql;
@@ -87,6 +93,7 @@ public class DataServiceExecutor {
     genTrans = builder.genTrans;
 
     executionPlan = MultimapBuilder.treeKeys().linkedListValues().build();
+    currentStage = Optional.absent();
   }
 
   public static class Builder {
@@ -330,16 +337,14 @@ public class DataServiceExecutor {
 
   protected void prepareExecution() throws KettleException {
     // Setup executor with default execution plan
-    List<ExecutionPoint> defaultExecutionPlan = ImmutableList.of(
+    addTasks( ImmutableList.of(
       new CopyParameters( parameters, serviceTrans ),
       new PrepareExecution( genTrans ),
       new PrepareExecution( serviceTrans ),
       new DefaultTransWiring( this ),
       new TransStarter( genTrans ),
       new TransStarter( serviceTrans )
-    );
-
-    addTasks( defaultExecutionPlan );
+    ) );
   }
 
   private Map<String, String> getWhereConditionParameters() {
@@ -352,20 +357,52 @@ public class DataServiceExecutor {
     return conditionParameters;
   }
 
-  public Collection<Runnable> getTasks() {
-    return executionPlan.values();
-  }
+  /**
+   * @return Mutable view of all tasks in the execution plan that are yet to run.
+   * Omits current stage and any previous stage tasks if query is executing.
+   */
+  public Collection<ExecutionPoint> getTasks() {
+    return new ForwardingCollection<ExecutionPoint>() {
+      @Override public boolean add( ExecutionPoint element ) {
+        return addTask( element );
+      }
 
-  public boolean addTask( Double priority, Runnable task ) {
-    return executionPlan.put( priority, task );
+      @Override public boolean addAll( Collection<? extends ExecutionPoint> collection ) {
+        return addTasks( collection );
+      }
+
+      @Override public Iterator<ExecutionPoint> iterator() {
+        // iterator.remove() is not supported by filtered iterable
+        // so make a copy of the key set here and iterate each stage individually
+        return FluentIterable.from( ImmutableList.copyOf( filteredMap().keySet() ) )
+          .transformAndConcat( Functions.forMap( executionPlan.asMap(), Collections.<ExecutionPoint>emptyList() ) )
+          .iterator();
+      }
+
+      @Override protected Collection<ExecutionPoint> delegate() {
+        return filteredMap().values();
+      }
+
+      private ListMultimap<Double, ExecutionPoint> filteredMap() {
+        return Multimaps.filterKeys( executionPlan, mutableRange() );
+      }
+    };
   }
 
   public boolean addTask( ExecutionPoint executionPoint ) {
-    return addTask( executionPoint.getPriority(), executionPoint );
+    return addTasks( ImmutableList.of( executionPoint ) );
   }
 
-  public boolean addTasks( Iterable<ExecutionPoint> tasks ) {
-    return executionPlan.putAll( FluentIterable.from( tasks ).index( ExecutionPoint.PRIORITY ) );
+  public boolean addTasks( Iterable<? extends ExecutionPoint> tasks ) {
+    // Group tasks by priority
+    ListMultimap<Double, ? extends ExecutionPoint> taskMap = Multimaps.index( tasks, ExecutionPoint.PRIORITY );
+
+    // Add all in mutable range
+    return executionPlan.putAll( Multimaps.filterKeys( taskMap, mutableRange() ) );
+  }
+
+  private Range<Double> mutableRange() {
+    return currentStage.isPresent() ? Range.greaterThan( currentStage.get() ) : Range.<Double>all();
   }
 
   public List<OptimizationImpactInfo> preview() {
@@ -424,7 +461,11 @@ public class DataServiceExecutor {
   }
 
   public DataServiceExecutor executeQuery( final RowListener resultRowListener ) {
-    executionPlan.put( ExecutionPoint.READY, new Runnable() {
+    addTask( new ExecutionPoint() {
+      @Override public double getPriority() {
+        return READY;
+      }
+
       @Override public void run() {
         // Give back the eventual result rows...
         //
@@ -444,14 +485,20 @@ public class DataServiceExecutor {
     }
 
     // Run execution plan
-    for ( Double stage : executionPlan.keySet() ) {
-      // Copy stage tasks to a new list to prevent accidental concurrent modification
-      for ( Runnable task : ImmutableList.copyOf( executionPlan.get( stage ) ) ) {
+    while ( nextStage() ) {
+      // Copy tasks to a new list to prevent accidental concurrent modification
+      for ( Runnable task : ImmutableList.copyOf( executionPlan.get( currentStage.get() ) ) ) {
         task.run();
       }
     }
 
     return this;
+  }
+
+  private boolean nextStage(){
+    // keySet is a SortedSet (since it's backed by a TreeMap), so currentStage will advance to the next value
+    currentStage = FluentIterable.from( executionPlan.keySet() ).filter( mutableRange() ).first();
+    return currentStage.isPresent();
   }
 
   public RowProducer addRowProducer() throws KettleException {
@@ -569,10 +616,5 @@ public class DataServiceExecutor {
 
   public int getRowLimit() {
     return sqlTransGenerator.getRowLimit();
-  }
-
-  @Deprecated
-  public ListMultimap<ExecutionPoint, Runnable> getListenerMap() {
-    return ImmutableListMultimap.of();
   }
 }

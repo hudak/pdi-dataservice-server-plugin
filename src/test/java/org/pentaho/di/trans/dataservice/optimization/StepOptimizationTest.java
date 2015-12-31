@@ -22,25 +22,25 @@
 
 package org.pentaho.di.trans.dataservice.optimization;
 
-import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ListenableFuture;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Answers;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.dataservice.BaseTest;
 import org.pentaho.di.trans.dataservice.DataServiceExecutor;
+import org.pentaho.di.trans.dataservice.execution.ExecutionPoint;
 import org.pentaho.di.trans.step.StepDataInterface;
 import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaDataCombi;
 import org.pentaho.di.trans.step.StepMetaInterface;
 
-import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.Assert.assertThat;
@@ -76,17 +76,18 @@ public class StepOptimizationTest extends BaseTest {
 
   @Test
   public void testActivate() throws Exception {
-    final ArrayListMultimap<DataServiceExecutor.ExecutionPoint, Runnable> tasks = ArrayListMultimap.create();
     doReturn( true ).when( stepOptimization ).activate( executor, stepInterface );
-    when( executor.getListenerMap() ).thenReturn( tasks );
 
     final ListenableFuture<Boolean> activate = stepOptimization.activate( executor, meta );
 
-    assertThat( tasks.get( DataServiceExecutor.ExecutionPoint.OPTIMIZE ), hasSize( 1 ) );
     assertThat( activate.isDone(), is( false ) );
+    ArgumentCaptor<ExecutionPoint> taskCaptor = ArgumentCaptor.forClass( ExecutionPoint.class );
+    verify( executor ).addTask( taskCaptor.capture() );
+    ExecutionPoint task = taskCaptor.getValue();
+    assertThat( task.getPriority(), is( ExecutionPoint.OPTIMIZE ) );
     verify( serviceTrans, never() ).findRunThread( anyString() );
 
-    tasks.get( DataServiceExecutor.ExecutionPoint.OPTIMIZE ).get( 0 ).run();
+    task.run();
 
     verify( stepOptimization ).activate( executor, stepInterface );
     assertThat( activate.isDone(), is( true ) );

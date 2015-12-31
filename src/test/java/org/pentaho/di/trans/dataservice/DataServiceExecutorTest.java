@@ -22,9 +22,7 @@
 
 package org.pentaho.di.trans.dataservice;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ListMultimap;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -46,6 +44,7 @@ import org.pentaho.di.trans.RowProducer;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransListener;
 import org.pentaho.di.trans.TransMeta;
+import org.pentaho.di.trans.dataservice.execution.ExecutionPoint;
 import org.pentaho.di.trans.dataservice.optimization.PushDownOptimizationMeta;
 import org.pentaho.di.trans.dataservice.optimization.ValueMetaResolver;
 import org.pentaho.di.trans.step.RowListener;
@@ -54,13 +53,17 @@ import org.pentaho.di.trans.step.StepListener;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.Matchers.arrayWithSize;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.junit.Assert.assertEquals;
@@ -219,7 +222,8 @@ public class DataServiceExecutorTest extends BaseTest {
       when( rowMeta.cloneRow( data ) ).thenReturn( dataClone );
       serviceRowListener.rowWrittenEvent( rowMeta, data );
       verify( sqlTransRowProducer )
-        .putRowWait( same( rowMeta ), and( eq( dataClone ), not( same( data ) ) ), any( Long.class ), any( TimeUnit.class ) );
+        .putRowWait( same( rowMeta ), and( eq( dataClone ), not( same( data ) ) ), any( Long.class ),
+          any( TimeUnit.class ) );
       verify( rowMeta ).cloneRow( data );
     }
 
@@ -365,10 +369,10 @@ public class DataServiceExecutorTest extends BaseTest {
     when( genTrans.isRunning() ).thenReturn( true );
 
     DataServiceExecutor executor = new DataServiceExecutor.Builder( new SQL( sql ), dataService, context ).
-        serviceTrans( serviceTrans ).
-        sqlTransGenerator( sqlTransGenerator ).
-        genTrans( genTrans ).
-        build();
+      serviceTrans( serviceTrans ).
+      sqlTransGenerator( sqlTransGenerator ).
+      genTrans( genTrans ).
+      build();
 
     executor.stop();
 
@@ -383,17 +387,16 @@ public class DataServiceExecutorTest extends BaseTest {
     when( genTrans.isStopped() ).thenReturn( true );
 
     DataServiceExecutor executor = new DataServiceExecutor.Builder( new SQL( sql ), dataService, context ).
-        serviceTrans( serviceTrans ).
-        sqlTransGenerator( sqlTransGenerator ).
-        genTrans( genTrans ).
-        build();
+      serviceTrans( serviceTrans ).
+      sqlTransGenerator( sqlTransGenerator ).
+      genTrans( genTrans ).
+      build();
 
     assertTrue( executor.isStopped() );
   }
 
   @Test
-  public void testExecuteConcurrentModification() throws Exception {
-
+  public void testExecutionPlan() throws Exception {
     String sql = "SELECT * FROM " + DATA_SERVICE_NAME;
     DataServiceExecutor executor = new DataServiceExecutor.Builder( new SQL( sql ), dataService, context ).
       prepareExecution( false ).
@@ -402,21 +405,37 @@ public class DataServiceExecutorTest extends BaseTest {
       genTrans( genTrans ).
       build();
 
-    final DataServiceExecutor.ExecutionPoint stage = DataServiceExecutor.ExecutionPoint.OPTIMIZE;
-    final ListMultimap<DataServiceExecutor.ExecutionPoint, Runnable> listenerMap = executor.getListenerMap();
-    final Runnable task = new Runnable() {
+    final Collection<ExecutionPoint> tasks = executor.getTasks();
+    assertThat( tasks, empty() );
+
+    final ExecutionPoint prepare = mock( ExecutionPoint.class );
+    when( prepare.getPriority() ).thenReturn( ExecutionPoint.PREPARE );
+    assertThat( executor.addTask( prepare ), is( true ) );
+
+    final ExecutionPoint ready = mock( ExecutionPoint.class );
+    when( ready.getPriority() ).thenReturn( ExecutionPoint.READY );
+
+    ExecutionPoint optimize = new ExecutionPoint() {
+      @Override public double getPriority() {
+        return OPTIMIZE;
+      }
+
       @Override public void run() {
-        // Remove itself on run
-        assertTrue( listenerMap.remove( stage, this ) );
+        assertThat( tasks, empty() );
+        verify( prepare ).run();
+
+        // Can not remove itself or modify previous tasks
+        assertThat( tasks.remove( prepare ), is( false ) );
+        assertThat( tasks.add( prepare ), is( false ) );
+        assertThat( tasks.remove( this ), is( false ) );
+
+        assertThat( tasks.add( ready ), is( true ) );
       }
     };
+    assertThat( executor.addTask( optimize ), is( true ) );
 
-    listenerMap.put( stage, task );
     executor.executeQuery();
-
-    // Note the error reported to logs
-    verify( genTrans.getLogChannel() ).logError( anyString(),
-      eq( stage ), eq( ImmutableList.of( task ) ), eq( ImmutableList.of() )
-    );
+    verify( ready ).run();
+    assertThat( tasks, contains( prepare, optimize, ready ) );
   }
 }
