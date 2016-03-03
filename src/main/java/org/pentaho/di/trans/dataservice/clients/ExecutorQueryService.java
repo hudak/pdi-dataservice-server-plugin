@@ -55,6 +55,10 @@ class ExecutorQueryService implements Query.Service {
         .parameters( parameters )
         .build();
       query = new ExecutorQuery( executor );
+      for ( Trans trans : query.getTransList() ) {
+        trans.setRepository( factory.getRepository() );
+        trans.setMetaStore( factory.getMetaStore() );
+      }
     } catch ( Exception e ) {
       factory.getLogChannel().logError( "Failed to execute data service " + sql.getServiceName(), e );
       Throwables.propagateIfInstanceOf( e, KettleException.class );
